@@ -284,6 +284,7 @@ func (ds *DaemonSuite) setupConfigOptions() {
 	option.Config.Opts.SetBool(option.DropNotify, true)
 	option.Config.Opts.SetBool(option.TraceNotify, true)
 	option.Config.Opts.SetBool(option.PolicyVerdictNotify, true)
+	option.Config.Opts.SetBool(option.EnableBPFMasquerade, false)
 }
 
 // convenience wrapper that adds a single policy
