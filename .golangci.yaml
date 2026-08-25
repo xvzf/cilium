@@ -238,6 +238,12 @@ linters:
       - linters:
           - staticcheck
         text: SA1019
+      # staticcheck v0.8.0-rc.1 reports every never-nil interface return, not
+      # just the typed nil ones: https://github.com/dominikh/go-tools/issues/1737
+      # TODO: drop once golangci-lint bundles staticcheck v0.8.1 or newer.
+      - linters:
+          - staticcheck
+        text: SA4023
       - linters:
           - staticcheck
         text: "SA9003: empty branch"
