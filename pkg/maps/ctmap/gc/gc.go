@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/netip"
 	"os"
 	"slices"
@@ -402,6 +403,22 @@ func (gc *GC) enableWithConfig(
 	}
 }
 
+// filterKind names the criterion a GC pass selected entries by, so that a
+// removal driven by an endpoint teardown can be told apart from one driven by
+// expiry.
+func filterKind(filter ctmap.GCFilter) string {
+	switch {
+	case filter.RemoveExpired && len(filter.MatchIPs) > 0:
+		return "expired+matchIPs"
+	case filter.RemoveExpired:
+		return "expired"
+	case len(filter.MatchIPs) > 0:
+		return "matchIPs"
+	default:
+		return "none"
+	}
+}
+
 func (gc *GC) Run(filter ctmap.GCFilter) (int, error) {
 	totalDeleted := 0
 	for _, m := range gc.ctMaps.ActiveMaps() {
@@ -410,6 +427,18 @@ func (gc *GC) Run(filter ctmap.GCFilter) (int, error) {
 			gc.logger.Error("failed to run GC on map",
 				logfields.BPFMapName, m.Name(),
 				logfields.Error, err,
+			)
+		}
+
+		// This path is how an endpoint teardown reaches the CT maps, and it is
+		// otherwise silent, which makes it indistinguishable from the periodic
+		// GC when an entry disappears unexpectedly.
+		if deleted > 0 {
+			gc.logger.Debug("Deleted entries from map on request",
+				logfields.BPFMapName, m.Name(),
+				logfields.Count, deleted,
+				logfields.Filter, filterKind(filter),
+				logfields.IPAddrs, slices.Collect(maps.Keys(filter.MatchIPs)),
 			)
 		}
 
@@ -495,6 +524,7 @@ func (gc *GC) runGC(ipv4, ipv6, triggeredBySignal bool, filter ctmap.GCFilter) (
 			gc.logger.Debug("Deleted filtered entries from map",
 				logfields.Path, m.Name(),
 				logfields.Count, deleted,
+				logfields.Filter, filterKind(filter),
 			)
 		}
 	}

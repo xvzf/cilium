@@ -576,7 +576,11 @@ func (m *Map) doGC(filter GCFilter, next4, next6 func(GCEvent)) (int, error) {
 // It returns how many items were deleted from m.
 func (m *Map) GC(filter GCFilter, next4, next6 func(GCEvent)) (int, error) {
 	if filter.RemoveExpired {
-		t, _ := timestamp.GetCTCurTime(timestamp.GetClockSourceFromOptions())
+		t, err := timestamp.GetCTCurTime(timestamp.GetClockSourceFromOptions())
+		if err != nil {
+			// Leaving filter.Time at zero would silently expire nothing.
+			return 0, fmt.Errorf("failed to determine CT current time: %w", err)
+		}
 		filter.Time = uint32(t)
 	}
 
