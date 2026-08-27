@@ -207,6 +207,68 @@ int bpf_test(__maybe_unused struct __sk_buff *sctx)
 		assert(monitor == TRACE_PAYLOAD_LEN);
 	});
 
+	TEST("ct_rst_on_established", {
+		struct __ctx_buff ctx = {};
+		struct ipv4_ct_tuple tuple = {
+			.nexthdr = IPPROTO_TCP
+		};
+		struct ct_entry ct_entry_new = {};
+		union tcp_flags seen_flags = {0};
+		struct ct_entry *entry;
+		__u32 monitor = 0;
+		int res;
+
+		tuple.dport = 8000;
+
+		res = map_update_elem(get_ct_map4(&tuple), &tuple, &ct_entry_new, BPF_ANY);
+		if (IS_ERR(res))
+			test_fatal("map_update_elem: %lld", res);
+
+		entry = map_lookup_elem(get_ct_map4(&tuple), &tuple);
+		if (!entry)
+			test_fatal("ct entry lookup failed");
+
+		/* Establish, then carry data so that seen_non_syn is set and the
+		 * entry is on the regular TCP lifetime.
+		 */
+		seen_flags.value = TCP_FLAG_SYN;
+		res = __ct_lookup(get_ct_map4(&tuple), &ctx, &tuple,
+				  ct_tcp_select_action(seen_flags), CT_EGRESS,
+				  CT_ENTRY_ANY, NULL, true, seen_flags, &monitor);
+		assert(res == CT_ESTABLISHED);
+
+		advance_time();
+		seen_flags.value = TCP_FLAG_ACK;
+		res = __ct_lookup(get_ct_map4(&tuple), &ctx, &tuple,
+				  ct_tcp_select_action(seen_flags), CT_EGRESS,
+				  CT_ENTRY_ANY, NULL, true, seen_flags, &monitor);
+		assert(res == CT_ESTABLISHED);
+		assert(entry->seen_non_syn);
+		assert(timeout_in(entry, CONFIG(ct_timeouts).connection_lifetime_tcp));
+
+		/* An RST from the peer closes the receiving direction only, so the
+		 * entry stays alive rather than dropping to the close timeout and
+		 * being frozen there for the garbage collector to reap.
+		 */
+		advance_time();
+		seen_flags.value = TCP_FLAG_RST;
+		res = __ct_lookup(get_ct_map4(&tuple), &ctx, &tuple,
+				  ct_tcp_select_action(seen_flags), CT_INGRESS,
+				  CT_ENTRY_ANY, NULL, true, seen_flags, &monitor);
+		assert(res == CT_ESTABLISHED);
+		assert(entry->rx_closing);
+		assert(!entry->tx_closing);
+
+		/* So a packet that keeps using it still pushes the deadline out. */
+		advance_time();
+		seen_flags.value = TCP_FLAG_ACK;
+		res = __ct_lookup(get_ct_map4(&tuple), &ctx, &tuple,
+				  ct_tcp_select_action(seen_flags), CT_EGRESS,
+				  CT_ENTRY_ANY, NULL, true, seen_flags, &monitor);
+		assert(res == CT_ESTABLISHED);
+		assert(timeout_in(entry, CONFIG(ct_timeouts).connection_lifetime_tcp));
+	});
+
 	test_finish();
 }
 

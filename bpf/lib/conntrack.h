@@ -138,14 +138,6 @@ static __always_inline enum ct_action ct_tcp_select_action(union tcp_flags flags
 	return ACTION_UNSPEC;
 }
 
-static __always_inline bool ct_entry_seen_both_syns(const struct ct_entry *entry)
-{
-	bool rx_syn = entry->rx_flags_seen & TCP_FLAG_SYN;
-	bool tx_syn = entry->tx_flags_seen & TCP_FLAG_SYN;
-
-	return rx_syn && tx_syn;
-}
-
 /**
  * Update the CT timeout and TCP flags for the specified entry.
  *
@@ -406,10 +398,14 @@ __ct_lookup(const void *map, const struct __ctx_buff *ctx, const void *tuple,
 				entry->tx_closing = 1;
 				break;
 			default:
-				/* If we got an RST and have not seen both SYNs,
-				 * terminate the connection.
+				/* If we got an RST for a connection that never
+				 * got past the handshake, terminate it. An
+				 * established connection is closed in the
+				 * direction the RST came from only, so that the
+				 * entry stays alive and keeps being refreshed
+				 * while the datapath is still matching it.
 				 */
-				if (!ct_entry_seen_both_syns(entry) &&
+				if (!entry->seen_non_syn &&
 				    (seen_flags.value & TCP_FLAG_RST)) {
 					entry->rx_closing = 1;
 					entry->tx_closing = 1;
