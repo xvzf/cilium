@@ -196,8 +196,9 @@ jobs:
              --helm-set operator.prometheus.tls.server.existingSecret=${{ steps.gen_certs.outputs.operator_prometheus_tls_secret_name }} \
              --helm-set operator.prometheus.tls.server.mtls.enabled=true \
              --helm-set hubble.enabled=true \
-             --helm-set=hubble.metrics.enabled=\"{dns,drop,tcp,flow,port-distribution,icmp,http}\" \
              --helm-set ingressController.enabled=true \
+             --helm-set bpf.monitorAggregation=none \
+             --helm-set hubble.eventBufferCapacity=65535 \
              --set-string extraEnv[3].name=CILIUM_FEATURE_METRICS_WITHOUT_ENV_VERSION \
              --set-string extraEnv[3].value=true \
              --set-string operator.extraEnv[3].name=CILIUM_FEATURE_METRICS_WITHOUT_ENV_VERSION \

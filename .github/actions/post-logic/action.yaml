@@ -37,7 +37,7 @@ runs:
         echo "=== Retrieve cluster state ==="
         kubectl get pods --all-namespaces -o wide
         cilium status
-        cilium sysdump --output-filename "cilium-sysdump-${{ inputs.artifacts_suffix }}"
+        cilium sysdump --hubble-flows-count 1000000 --hubble-flows-timeout 30s --output-filename "cilium-sysdump-${{ inputs.artifacts_suffix }}"
 
     - name: Upload artifacts
       if: ${{ always() && inputs.job_status != 'success' }}
