@@ -540,11 +540,49 @@ func (m *Map) cleanup(filter GCFilter, natMap *nat.Map, stats *gcStats, next fun
 				}
 			} else {
 				stats.deleted++
+				if filter.RemoveExpired {
+					m.reportRecentlyActiveExpiry(ctKey, entry, filter.Time, stats)
+				}
 			}
 		default:
 			stats.aliveEntries++
 		}
 	}
+}
+
+const (
+	// ctRecentReportWindow bounds, in conntrack clock units, how recently an
+	// entry must have reported traffic for its expiry to be worth reporting.
+	ctRecentReportWindow = 60
+
+	// ctRecentExpiryLogLimit caps the lines one pass can emit.
+	ctRecentExpiryLogLimit = 5
+)
+
+// reportRecentlyActiveExpiry reports an entry that expiry removed even though it
+// reported traffic moments earlier. An entry the datapath is still matching
+// packets against should keep having its lifetime refreshed, so removing one
+// that reported traffic within the window means either its lifetime stopped
+// being refreshed while it was in use, or the reference time is wrong. Both are
+// bugs, and neither is distinguishable from a genuinely idle expiry in the
+// per-map counts alone.
+func (m *Map) reportRecentlyActiveExpiry(key CtKey, entry *CtEntry, now uint32, stats *gcStats) {
+	lastReport := max(entry.LastRxReport, entry.LastTxReport)
+	if now < lastReport || now-lastReport > ctRecentReportWindow {
+		return
+	}
+
+	stats.recentlyActiveDeleted++
+	if stats.recentlyActiveDeleted > ctRecentExpiryLogLimit {
+		return
+	}
+
+	m.Logger.Info("Expired a conntrack entry that reported traffic recently",
+		logfields.Key, key.ToHost(),
+		logfields.Entry, fmt.Sprintf("lifetime=%d now=%d lastRxReport=%d lastTxReport=%d %s",
+			entry.Lifetime, now, entry.LastRxReport, entry.LastTxReport, entry.flagsString()),
+		logfields.Count, stats.recentlyActiveDeleted,
+	)
 }
 
 func (f GCFilter) doFiltering(srcIP, dstIP NetAddr, srcPort, dstPort uint16, nextHdr, flags uint8, entry *CtEntry) action {

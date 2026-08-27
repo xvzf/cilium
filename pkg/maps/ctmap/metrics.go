@@ -24,6 +24,10 @@ type gcStats struct {
 	// deleted is the number of keys deleted
 	deleted uint32
 
+	// recentlyActiveDeleted is the number of entries expiry removed that had
+	// reported traffic within ctRecentReportWindow. Used to cap the reporting.
+	recentlyActiveDeleted uint32
+
 	// entries that where marked for deletion but skipped (i.e. due to
 	// LRU evictions, etc).
 	skipped uint32
