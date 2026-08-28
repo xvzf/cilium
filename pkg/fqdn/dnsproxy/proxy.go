@@ -1089,7 +1089,8 @@ func (p *DNSProxy) ServeDNS(w dns.ResponseWriter, request *dns.Msg) {
 	// - the source is known to be in the host networking namespace, or
 	// - the destination is known to be outside of the cluster, or
 	// - is the local host
-	if option.Config.DNSProxyEnableTransparentMode && !ep.IsHost() && !epAddr.IsLoopback() && ep.ID != uint16(identity.ReservedIdentityHost) && targetServerID.IsCluster() && targetServerID != identity.ReservedIdentityHost {
+	useOriginalSourceAddr := option.Config.DNSProxyEnableTransparentMode && !ep.IsHost() && !epAddr.IsLoopback() && ep.ID != uint16(identity.ReservedIdentityHost) && targetServerID.IsCluster() && targetServerID != identity.ReservedIdentityHost
+	if useOriginalSourceAddr {
 		dialer.LocalAddr = w.RemoteAddr()
 		key = sharedClientKey(protocol, epIPPort, targetServerAddrStr)
 	}
@@ -1102,6 +1103,25 @@ func (p *DNSProxy) ServeDNS(w dns.ResponseWriter, request *dns.Msg) {
 	}
 
 	response, _, closer, err := p.DNSClients.Exchange(key, conf, request, targetServerAddrStr)
+	// The original source address/port may already be bound by a socket in the host network namespace (https://github.com/cilium/cilium/issues/31535).
+	// Retrying without spoofing the original source lets the kernel pick a free ephemeral port instead of dropping the DNS request outright;
+	// the reply just won't appear to originate from the endpoint's own address/port in that one case.
+	if useOriginalSourceAddr && errors.Is(err, unix.EADDRINUSE) {
+		closer()
+		scopedLog.Warn("DNS proxy source address in use, retrying with ephemeral port", logfields.Error, err)
+
+		// Only overwrite port, NOT the source address; otherwise, this could result in unencrypted DNS requests when e.g. IPSec is used (encryption determined by src ip)
+		if udpAddr, ok := dialer.LocalAddr.(*net.UDPAddr); ok && protocol == "udp" {
+			udpAddr.Port = 0
+		}
+		if tcpAddr, ok := dialer.LocalAddr.(*net.TCPAddr); ok && protocol == "tcp" {
+			tcpAddr.Port = 0
+		}
+
+		dialer.LocalAddr = nil
+
+		response, _, closer, err = p.DNSClients.Exchange("", conf, request, targetServerAddrStr)
+	}
 	defer closer()
 
 	stat.UpstreamTime.End(err == nil)
