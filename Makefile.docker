@@ -12,7 +12,7 @@ export DOCKER_BUILDKIT=1
 # platform only.
 ifdef ARCH
   # Default to multi-arch builds, always create the builder for all the platforms we support
-  DOCKER_PLATFORMS := linux/arm64,linux/amd64
+  DOCKER_PLATFORMS := linux/amd64
   DOCKER_BUILDER := $(shell docker buildx ls --format '{{ .Name }}' | head -n1)
   ifneq (,$(filter $(DOCKER_BUILDER),default desktop-linux))
     DOCKER_BUILDKIT_DRIVER :=
@@ -65,7 +65,7 @@ GIT_IGNORE_FILES := $(shell find . -not -path "./vendor*" -name .gitignore -prin
 			-e '$$a\' \
 		{DIR}.gitignore >> $@
 
-DOCKER_REGISTRY ?= quay.io
+DOCKER_REGISTRY ?= harbor.de-cix.net/ap/tmp-cilium-dev-mr
 ifeq ($(findstring /,$(DOCKER_DEV_ACCOUNT)),/)
     # DOCKER_DEV_ACCOUNT already contains '/', assume it specifies a registry
     IMAGE_REPOSITORY := $(DOCKER_DEV_ACCOUNT)
